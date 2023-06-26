@@ -1,9 +1,18 @@
 use rodio::{OutputStream, OutputStreamHandle, source::Source};
 use std::collections::HashMap;
-use std::error::Error;
-use std::thread::sleep;
-use std::time::Duration;
 use std::env::args;
+use std::error::Error;
+use std::io::{self, Read};
+use std::io::{stdin, stdout, Write};
+use std::sync::mpsc;
+use std::thread;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
+use termion::async_stdin;
+use termion::input::Keys;
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::raw::IntoRawMode;
 
 /*
       We want to write a wavetable oscillator: an object that iterates over a specific wave table
@@ -94,6 +103,78 @@ impl Source for WavetableOscillator {
     }
 }
 
+struct DurationSource<S> {
+    source: S,
+    duration: Duration,
+    elapsed: Duration,
+}
+
+impl<S> DurationSource<S>
+    where
+        S: Source,
+        S::Item: rodio::Sample,
+{
+    pub fn new(source: S, duration: Duration) -> Self {
+        DurationSource {
+            source,
+            duration,
+            elapsed: Duration::new(0, 0),
+        }
+    }
+}
+
+impl<S> Source for DurationSource<S>
+    where
+        S: Source,
+        S::Item: rodio::Sample,
+{
+    fn current_frame_len(&self) -> Option<usize> {
+        self.source.current_frame_len()
+    }
+
+    fn channels(&self) -> u16 {
+        self.source.channels()
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.source.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        Some(self.duration)
+    }
+}
+
+impl<S> Iterator for DurationSource<S>
+    where
+        S: Source,
+        S::Item: rodio::Sample,
+{
+    type Item = S::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.elapsed >= self.duration {
+            return None;
+        }
+
+        if let Some(sample) = self.source.next() {
+            self.elapsed += Duration::from_secs_f32(1.0 / self.sample_rate() as f32);
+            Some(sample)
+        } else {
+            None
+        }
+    }
+}
+
+
+struct DisplayableKey(Key);
+
+impl std::fmt::Display for DisplayableKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
 
 fn create_note_to_freq_map() -> HashMap<String, f32> {
     let mut map = HashMap::new();
@@ -156,17 +237,36 @@ fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandl
     }
 }
 
+// fn play_note(note: &str, stream_handle: OutputStreamHandle, wave_table: Vec<f32>, note_to_freq_map: HashMap<String, f32>) {
+//
+//         // set the frequency
+//         let frequency = note_to_freq_map.get(note).unwrap_or(&440.0);  // default to A4 if not found
+//         let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
+//         oscillator.set_frequency(*frequency);
+//         stream_handle.play_raw(oscillator.convert_samples());
+//         // sleep for the duration
+//         std::thread::sleep(std::time::Duration::from_secs_f32(0.1));
+// }
+
+fn play_note(note: &str, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>, note_to_freq_map: HashMap<String, f32>, duration: Duration) {
+    let frequency = note_to_freq_map.get(note).unwrap_or(&440.0);
+    let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
+    oscillator.set_frequency(*frequency);
+    let duration_source = DurationSource::new(oscillator, duration);
+    if let Err(err) = stream_handle.play_raw(duration_source.convert_samples()) {
+        eprintln!("Error playing note {}: {}", note, err);
+    }
+}
 
 
-fn main() -> Result<(), Box<dyn Error>> {
+
+fn main() {
     let args: Vec<String> = args().collect();
-    if args.len() < 3 {
-        eprintln!("Usage: wavetable_synth [440|432] note1 note2 ...");
+    if args.len() < 1 {
+        eprintln!("Usage: wavetable_synth [440|432] ...");
         ();
     }
     let frequency_standard: u32 = args[1].parse().expect("Invalid frequency standard");
-    let notes_input: Vec<&str> = args[2..].iter().map(|s| s.as_str()).collect();
-    println!("We about to play {:?}", notes_input);
 
     //A wave table is an array in memory, which contains 1 period of the waveform
     // we want to play out through our oscillator.
@@ -185,33 +285,34 @@ fn main() -> Result<(), Box<dyn Error>> {
         wave_table.push((2.0 * std::f32::consts::PI * n as f32 / wave_table_size as f32).sin());
     }
 
-    // let mut oscillator = WavetableOscillator::new(44100, wave_table);
-    // oscillator.set_frequency(440.0);
-    //
-    // let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-    //
-    // let _result = stream_handle.play_raw(oscillator.convert_samples());
-    //
-    // std::thread::sleep(std::time::Duration::from_secs(5));
+    let stdin = stdin();
+    let mut stdout = stdout().into_raw_mode().unwrap();
+    // define duration for each note in seconds
+    let note_duration = Duration::from_secs(2);
+    let idle_duration = Duration::from_secs(30);
 
-    // define a sequence of notes to play
-    let notes = vec!["G", "A", "G", "C", "B", "G", "G"];
-    // duration for each note in seconds
-    let duration = 0.3;
+    let Ok((_stream, stream_handle))  = OutputStream::try_default() else { todo!() };;
 
-    let (_stream, stream_handle) = OutputStream::try_default()?;
-
-    // Call the function with the note sequence, duration, stream_handle, and wave_table
-    // play_notes(notes.clone(), duration, &stream_handle, wave_table.clone());
-    // play_notes(notes.clone(), duration, &stream_handle, wave_table.clone());
-    // play_notes(notes.clone().into_iter().rev().collect(), duration, &stream_handle, wave_table.clone());
-    // play_notes(notes.clone(), 0.6 , &stream_handle, wave_table);
-    match frequency_standard {
-        440 => play_notes(notes_input.clone(), 0.5, &stream_handle, wave_table, create_note_to_freq_map()),
-        432 => play_notes(notes_input.clone(), 0.5, &stream_handle, wave_table, create_note_to_freq_map_432()),
-        _ => eprintln!("Invalid frequency standard: use 440 or 432"),
+    for c in stdin.keys() {
+        match c.unwrap() {
+            Key::Char('q') => break,
+            Key::Char(c) => {
+                let note = c.to_uppercase().to_string();
+                if let Some(frequency) = create_note_to_freq_map().get(&note) {
+                    writeln!(stdout, "PLAYING A: {}", note).unwrap();
+                    play_note(note.as_str(), &stream_handle, wave_table.clone(),
+                              create_note_to_freq_map(), Duration::from_secs(2))
+                }
+            },
+            //Key::Char(c)   => writeln!(stdout, "Key pressed: {}", c).unwrap(),
+            Key::Alt(c)    => writeln!(stdout, "Alt-{}", c).unwrap(),
+            Key::Ctrl(c)   => writeln!(stdout, "Ctrl-{}", c).unwrap(),
+            Key::Left      => writeln!(stdout, "Left Arrow").unwrap(),
+            Key::Right     => writeln!(stdout, "Right Arrow").unwrap(),
+            Key::Up        => writeln!(stdout, "Up Arrow").unwrap(),
+            Key::Down      => writeln!(stdout, "Down Arrow").unwrap(),
+            _              => {}
+        }
+        stdout.flush().unwrap();
     }
-
-
-    Ok(())
 }
