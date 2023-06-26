@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;
+use std::env::args;
 
 /*
       We want to write a wavetable oscillator: an object that iterates over a specific wave table
@@ -112,13 +113,43 @@ fn create_note_to_freq_map() -> HashMap<String, f32> {
     map
 }
 
-fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>) {
-    let note_to_freq_map = create_note_to_freq_map();
+fn create_note_to_freq_map_432() -> HashMap<String, f32> {
+    let mut map = HashMap::new();
+    map.insert("A".to_string(), 432.00);
+    map.insert("A#".to_string(), 457.69);
+    map.insert("B".to_string(), 484.90);
+    map.insert("C".to_string(), 512.33);
+    map.insert("C#".to_string(), 542.29);
+    map.insert("D".to_string(), 576.65);
+    map.insert("D#".to_string(), 608.39);
+    map.insert("E".to_string(), 645.86);
+    map.insert("F".to_string(), 684.72);
+    map.insert("F#".to_string(), 725.38);
+    map.insert("G".to_string(), 768.82);
+    map.insert("G#".to_string(), 815.51);
+
+    map
+}
+
+// fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>) {
+//     let note_to_freq_map = create_note_to_freq_map();
+//     for note in notes {
+//         // set the frequency
+//         let frequency = note_to_freq_map.get(note).cloned().unwrap_or(440.0);  //
+//         let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
+//         oscillator.set_frequency(frequency);
+//         stream_handle.play_raw(oscillator.convert_samples());
+//         // sleep for the duration
+//         std::thread::sleep(std::time::Duration::from_secs_f32(duration));
+//     }
+// }
+
+fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>, note_to_freq_map: HashMap<String, f32>) {
     for note in notes {
         // set the frequency
-        let frequency = note_to_freq_map.get(note).cloned().unwrap_or(440.0);  //
+        let frequency = note_to_freq_map.get(note).unwrap_or(&440.0);  // default to A4 if not found
         let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
-        oscillator.set_frequency(frequency);
+        oscillator.set_frequency(*frequency);
         stream_handle.play_raw(oscillator.convert_samples());
         // sleep for the duration
         std::thread::sleep(std::time::Duration::from_secs_f32(duration));
@@ -126,7 +157,17 @@ fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandl
 }
 
 
+
 fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = args().collect();
+    if args.len() < 3 {
+        eprintln!("Usage: wavetable_synth [440|432] note1 note2 ...");
+        ();
+    }
+    let frequency_standard: u32 = args[1].parse().expect("Invalid frequency standard");
+    let notes_input: Vec<&str> = args[2..].iter().map(|s| s.as_str()).collect();
+    println!("We about to play {:?}", notes_input);
+
     //A wave table is an array in memory, which contains 1 period of the waveform
     // we want to play out through our oscillator.
     let wave_table_size = 64;
@@ -154,14 +195,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     // std::thread::sleep(std::time::Duration::from_secs(5));
 
     // define a sequence of notes to play
-    let notes = vec!["A", "B", "C", "D", "E", "F", "G", "A"];
+    let notes = vec!["G", "A", "G", "C", "B", "G", "G"];
     // duration for each note in seconds
-    let duration = 0.5;
+    let duration = 0.3;
 
     let (_stream, stream_handle) = OutputStream::try_default()?;
 
     // Call the function with the note sequence, duration, stream_handle, and wave_table
-    play_notes(notes, duration, &stream_handle, wave_table);
+    // play_notes(notes.clone(), duration, &stream_handle, wave_table.clone());
+    // play_notes(notes.clone(), duration, &stream_handle, wave_table.clone());
+    // play_notes(notes.clone().into_iter().rev().collect(), duration, &stream_handle, wave_table.clone());
+    // play_notes(notes.clone(), 0.6 , &stream_handle, wave_table);
+    match frequency_standard {
+        440 => play_notes(notes_input.clone(), 0.5, &stream_handle, wave_table, create_note_to_freq_map()),
+        432 => play_notes(notes_input.clone(), 0.5, &stream_handle, wave_table, create_note_to_freq_map_432()),
+        _ => eprintln!("Invalid frequency standard: use 440 or 432"),
+    }
+
 
     Ok(())
 }
