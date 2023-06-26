@@ -13,7 +13,12 @@ use termion::input::Keys;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
-
+use device_query::{DeviceQuery, DeviceState, Keycode};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand,
+};
 /*
       We want to write a wavetable oscillator: an object that iterates over a specific wave table
       with speed dictated by the frequency of the tone it should output.
@@ -266,6 +271,7 @@ fn main() {
         eprintln!("Usage: wavetable_synth [440|432] ...");
         ();
     }
+
     let frequency_standard: u32 = args[1].parse().expect("Invalid frequency standard");
 
     //A wave table is an array in memory, which contains 1 period of the waveform
@@ -285,34 +291,93 @@ fn main() {
         wave_table.push((2.0 * std::f32::consts::PI * n as f32 / wave_table_size as f32).sin());
     }
 
-    let stdin = stdin();
-    let mut stdout = stdout().into_raw_mode().unwrap();
     // define duration for each note in seconds
     let note_duration = Duration::from_secs(2);
     let idle_duration = Duration::from_secs(30);
 
-    let Ok((_stream, stream_handle))  = OutputStream::try_default() else { todo!() };;
+    let Ok((_stream, stream_handle))  = OutputStream::try_default() else { todo!() };
 
-    for c in stdin.keys() {
-        match c.unwrap() {
-            Key::Char('q') => break,
-            Key::Char(c) => {
-                let note = c.to_uppercase().to_string();
-                if let Some(frequency) = create_note_to_freq_map().get(&note) {
-                    writeln!(stdout, "PLAYING A: {}", note).unwrap();
-                    play_note(note.as_str(), &stream_handle, wave_table.clone(),
-                              create_note_to_freq_map(), Duration::from_secs(2))
+
+    let stdin = stdin();
+    let mut stdout = stdout().into_raw_mode().unwrap();
+    let _alternate_screen = stdout.execute(EnterAlternateScreen);
+
+    terminal::enable_raw_mode().unwrap();
+
+    let device_state = DeviceState::new();
+    let mut key_pressed = false;
+
+    let mut key_start_times: HashMap<char, Instant> = HashMap::new();
+
+    loop {
+        // we handle the event
+        if event::poll(std::time::Duration::from_millis(10)).unwrap() {
+            match event::read().unwrap() {
+                Event::Key(event) => {
+                    match event.code {
+                        KeyCode::Char('q') => break,
+                        KeyCode::Char(c) => {
+                            let note = c.to_uppercase().to_string();
+                            if let Some(frequency) = create_note_to_freq_map().get(&note) {
+                                writeln!(stdout, "PLAYING A: {}", note).unwrap();
+                                play_note(note.as_str(), &stream_handle, wave_table.clone(),
+                                          create_note_to_freq_map(), Duration::from_secs(2))
+                            }
+                        },
+                        _              => {}
+                    }
                 }
-            },
-            //Key::Char(c)   => writeln!(stdout, "Key pressed: {}", c).unwrap(),
-            Key::Alt(c)    => writeln!(stdout, "Alt-{}", c).unwrap(),
-            Key::Ctrl(c)   => writeln!(stdout, "Ctrl-{}", c).unwrap(),
-            Key::Left      => writeln!(stdout, "Left Arrow").unwrap(),
-            Key::Right     => writeln!(stdout, "Right Arrow").unwrap(),
-            Key::Up        => writeln!(stdout, "Up Arrow").unwrap(),
-            Key::Down      => writeln!(stdout, "Down Arrow").unwrap(),
-            _              => {}
+                _ => {}
+            }
         }
-        stdout.flush().unwrap();
     }
+
+    // ... rest of main()...
+
+    let _ = stdout.execute(LeaveAlternateScreen);
 }
+
+
+// loop {
+//     // We read the next key, but we don't consume it yet
+//     match stdin_lock.keys().next() {
+//         Some(Ok(key)) => {
+//             let start_time = std::time::Instant::now();
+//             println!("Key pressed");
+//
+//             match key {
+//                 Key::Char('q') => break,
+//                 Key::Char(c) => {
+//                     let note = c.to_uppercase().to_string();
+//                     if let Some(frequency) = create_note_to_freq_map().get(&note) {
+//                         writeln!(stdout, "PLAYING A: {}", note).unwrap();
+//                         play_note(note.as_str(), &stream_handle, wave_table.clone(),
+//                                   create_note_to_freq_map(), Duration::from_secs(2))
+//                     }
+//                 },
+//                 Key::Alt(c)    => writeln!(stdout, "Alt-{}", c).unwrap(),
+//                 Key::Ctrl(c)   => writeln!(stdout, "Ctrl-{}", c).unwrap(),
+//                 Key::Left      => writeln!(stdout, "Left Arrow").unwrap(),
+//                 Key::Right     => writeln!(stdout, "Right Arrow").unwrap(),
+//                 Key::Up        => writeln!(stdout, "Up Arrow").unwrap(),
+//                 Key::Down      => writeln!(stdout, "Down Arrow").unwrap(),
+//                 _              => {}
+//             }
+//
+//             let duration = start_time.elapsed();
+//             println!("Key released after {:?} seconds", duration.as_secs_f64());
+//
+//             // Flush the stdout
+//             stdout.flush().unwrap();
+//         },
+//         Some(Err(err)) => {
+//             eprintln!("Error: {}", err);
+//         },
+//         None => {
+//             // Handle case where there are no keys
+//         }
+//     }
+//
+//     // Add a small delay to prevent high CPU usage
+//     std::thread::sleep(std::time::Duration::from_millis(10));
+// }
