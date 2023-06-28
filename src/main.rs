@@ -284,7 +284,7 @@ fn main() {
                         KeyCode::Char(c) => {
                             let note = c.to_uppercase().to_string();
                             if let Some(frequency) = create_note_to_freq_map().get(&note) {
-                                writeln!(stdout, "PLAYING A: {}", note).unwrap();
+                                writeln!(stdout, "{}", note).unwrap();
                                 play_note(note.as_str(), &stream_handle, wave_table.clone(),
                                           create_note_to_freq_map(), Duration::from_millis(100))
                             }
