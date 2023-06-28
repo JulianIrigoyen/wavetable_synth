@@ -217,19 +217,6 @@ fn create_note_to_freq_map_432() -> HashMap<String, f32> {
     map
 }
 
-// fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>) {
-//     let note_to_freq_map = create_note_to_freq_map();
-//     for note in notes {
-//         // set the frequency
-//         let frequency = note_to_freq_map.get(note).cloned().unwrap_or(440.0);  //
-//         let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
-//         oscillator.set_frequency(frequency);
-//         stream_handle.play_raw(oscillator.convert_samples());
-//         // sleep for the duration
-//         std::thread::sleep(std::time::Duration::from_secs_f32(duration));
-//     }
-// }
-
 fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>, note_to_freq_map: HashMap<String, f32>) {
     for note in notes {
         // set the frequency
@@ -242,17 +229,6 @@ fn play_notes(notes: Vec<&str>, duration: f32, stream_handle: &OutputStreamHandl
     }
 }
 
-// fn play_note(note: &str, stream_handle: OutputStreamHandle, wave_table: Vec<f32>, note_to_freq_map: HashMap<String, f32>) {
-//
-//         // set the frequency
-//         let frequency = note_to_freq_map.get(note).unwrap_or(&440.0);  // default to A4 if not found
-//         let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
-//         oscillator.set_frequency(*frequency);
-//         stream_handle.play_raw(oscillator.convert_samples());
-//         // sleep for the duration
-//         std::thread::sleep(std::time::Duration::from_secs_f32(0.1));
-// }
-
 fn play_note(note: &str, stream_handle: &OutputStreamHandle, wave_table: Vec<f32>, note_to_freq_map: HashMap<String, f32>, duration: Duration) {
     let frequency = note_to_freq_map.get(note).unwrap_or(&440.0);
     let mut oscillator = WavetableOscillator::new(44100, wave_table.clone());
@@ -262,7 +238,6 @@ fn play_note(note: &str, stream_handle: &OutputStreamHandle, wave_table: Vec<f32
         eprintln!("Error playing note {}: {}", note, err);
     }
 }
-
 
 
 fn main() {
@@ -291,23 +266,13 @@ fn main() {
         wave_table.push((2.0 * std::f32::consts::PI * n as f32 / wave_table_size as f32).sin());
     }
 
-    // define duration for each note in seconds
-    let note_duration = Duration::from_secs(2);
-    let idle_duration = Duration::from_secs(30);
-
-    let Ok((_stream, stream_handle))  = OutputStream::try_default() else { todo!() };
+    let Ok((_stream, stream_handle)) = OutputStream::try_default() else { todo!() };
 
 
-    let stdin = stdin();
     let mut stdout = stdout().into_raw_mode().unwrap();
     let _alternate_screen = stdout.execute(EnterAlternateScreen);
 
     terminal::enable_raw_mode().unwrap();
-
-    let device_state = DeviceState::new();
-    let mut key_pressed = false;
-
-    let mut key_start_times: HashMap<char, Instant> = HashMap::new();
 
     loop {
         // we handle the event
@@ -321,63 +286,15 @@ fn main() {
                             if let Some(frequency) = create_note_to_freq_map().get(&note) {
                                 writeln!(stdout, "PLAYING A: {}", note).unwrap();
                                 play_note(note.as_str(), &stream_handle, wave_table.clone(),
-                                          create_note_to_freq_map(), Duration::from_secs(2))
+                                          create_note_to_freq_map(), Duration::from_millis(100))
                             }
-                        },
-                        _              => {}
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
             }
         }
     }
-
-    // ... rest of main()...
-
     let _ = stdout.execute(LeaveAlternateScreen);
 }
-
-
-// loop {
-//     // We read the next key, but we don't consume it yet
-//     match stdin_lock.keys().next() {
-//         Some(Ok(key)) => {
-//             let start_time = std::time::Instant::now();
-//             println!("Key pressed");
-//
-//             match key {
-//                 Key::Char('q') => break,
-//                 Key::Char(c) => {
-//                     let note = c.to_uppercase().to_string();
-//                     if let Some(frequency) = create_note_to_freq_map().get(&note) {
-//                         writeln!(stdout, "PLAYING A: {}", note).unwrap();
-//                         play_note(note.as_str(), &stream_handle, wave_table.clone(),
-//                                   create_note_to_freq_map(), Duration::from_secs(2))
-//                     }
-//                 },
-//                 Key::Alt(c)    => writeln!(stdout, "Alt-{}", c).unwrap(),
-//                 Key::Ctrl(c)   => writeln!(stdout, "Ctrl-{}", c).unwrap(),
-//                 Key::Left      => writeln!(stdout, "Left Arrow").unwrap(),
-//                 Key::Right     => writeln!(stdout, "Right Arrow").unwrap(),
-//                 Key::Up        => writeln!(stdout, "Up Arrow").unwrap(),
-//                 Key::Down      => writeln!(stdout, "Down Arrow").unwrap(),
-//                 _              => {}
-//             }
-//
-//             let duration = start_time.elapsed();
-//             println!("Key released after {:?} seconds", duration.as_secs_f64());
-//
-//             // Flush the stdout
-//             stdout.flush().unwrap();
-//         },
-//         Some(Err(err)) => {
-//             eprintln!("Error: {}", err);
-//         },
-//         None => {
-//             // Handle case where there are no keys
-//         }
-//     }
-//
-//     // Add a small delay to prevent high CPU usage
-//     std::thread::sleep(std::time::Duration::from_millis(10));
-// }
